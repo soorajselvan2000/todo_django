@@ -12,6 +12,11 @@ from django.shortcuts import get_object_or_404
 from .forms import TodoForm
 from .serializers import TodoSerializer
 from .models import Todo
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from .serializers import TodoSerializer
 
 @api_view(['POST'])
 @permission_classes((AllowAny,))
@@ -46,12 +51,6 @@ def logout(request):
     except:
         return Response({'error': 'Something went wrong'}, status=HTTP_400_BAD_REQUEST)
     return Response({"message": "Successfully logged out"}, status=HTTP_200_OK)
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from .serializers import TodoSerializer
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -111,3 +110,40 @@ def filter_todos_by_status(request):
 
     serializer = TodoSerializer(todos, many=True)
     return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_todos(request):
+    file = request.FILES.get('file')
+    if not file:
+        return Response({'error': 'No file provided'}, status=400)
+
+    ext = file.name.split('.')[-1].lower()
+
+    if ext == 'json':
+        import json
+        data = json.load(file)
+        for item in data:
+            Todo.objects.create(user=request.user, **item)
+
+    elif ext == 'csv':
+        import csv
+        decoded = file.read().decode('utf-8').splitlines()
+        reader = csv.DictReader(decoded)
+        for row in reader:
+            Todo.objects.create(user=request.user, **row)
+
+    elif ext == 'txt':
+        lines = file.read().decode('utf-8').splitlines()
+        for line in lines:
+            Todo.objects.create(user=request.user, task=line, date=date.today())
+
+    elif ext == 'sql':
+        # WARNING: Not safe to run SQL queries directly unless parsed
+        return Response({'error': 'SQL import not supported for safety'}, status=400)
+
+    else:
+        return Response({'error': 'Unsupported file format'}, status=400)
+
+    return Response({'message': 'Todos imported successfully'})
+
