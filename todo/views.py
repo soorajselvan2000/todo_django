@@ -96,3 +96,18 @@ def delete_todo(request, pk):
     
     todo.delete()
     return Response({'message': 'Todo deleted successfully'}, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def filter_todos_by_status(request):
+    status_param = request.GET.get('status')
+
+    if status_param == 'completed':
+        todos = Todo.objects.filter(user=request.user, is_completed=True)
+    elif status_param == 'pending':
+        todos = Todo.objects.filter(user=request.user, is_completed=False)
+    else:  # 'all' or missing
+        todos = Todo.objects.filter(user=request.user)
+
+    serializer = TodoSerializer(todos, many=True)
+    return Response(serializer.data)
