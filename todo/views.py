@@ -1,7 +1,7 @@
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate,login
 from rest_framework import status
 from rest_framework.decorators import api_view,permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.response import Response
 from django.contrib.auth.forms import UserCreationForm
@@ -27,21 +27,45 @@ def signup(request):
         return Response("account created successfully", status=status.HTTP_201_CREATED)
     return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
 
+# Admin login API
 @csrf_exempt
 @api_view(["POST"])
-@permission_classes((AllowAny,))
-def login(request):
+@permission_classes([AllowAny])
+def admin_login(request):
     username = request.data.get("username")
     password = request.data.get("password")
-    if username is None or password is None:
-        return Response({'error': 'Please provide both username and password'},
-                        status=HTTP_400_BAD_REQUEST)
+
+    if not username or not password:
+        return Response({'error': 'Username and password required'}, status=HTTP_400_BAD_REQUEST)
+
     user = authenticate(username=username, password=password)
-    if not user:
-        return Response({'error': 'Invalid Credentials'},
-                        status=HTTP_404_NOT_FOUND)
-    token, _ = Token.objects.get_or_create(user=user)
-    return Response({'token': token.key},status=HTTP_200_OK)
+
+    if user and user.is_superuser:
+        login(request, user)
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({'token': token.key, 'message': 'Admin logged in'}, status=HTTP_200_OK)
+    return Response({'error': 'Invalid admin credentials'}, status=HTTP_404_NOT_FOUND)
+
+
+# Normal user login API
+@csrf_exempt
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def user_login(request):
+    username = request.data.get("username")
+    password = request.data.get("password")
+
+    if not username or not password:
+        return Response({'error': 'Username and password required'}, status=HTTP_400_BAD_REQUEST)
+
+    user = authenticate(username=username, password=password)
+
+    if user and not user.is_superuser:
+        login(request, user)
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({'token': token.key, 'message': 'User logged in'}, status=HTTP_200_OK)
+
+    return Response({'error': 'Invalid user credentials'}, status=HTTP_404_NOT_FOUND)
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
