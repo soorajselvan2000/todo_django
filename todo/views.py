@@ -54,12 +54,14 @@ def user_login(request):
     return Response({'error': 'Invalid user credentials'}, status=HTTP_404_NOT_FOUND)
 
 # Create todo
+from .models import UserActionLog
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_todo(request):
     serializer = TodoSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save(user=request.user)
+        UserActionLog.objects.create(user=request.user, action='added', todo=serializer.instance)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -70,11 +72,11 @@ def filter_todos_by_status(request):
     status_param = request.GET.get('status')
 
     if status_param == 'completed':
-        todos = Todo.objects.filter(user=request.user, is_completed=True)
+        todos = Todo.objects.filter(user=request.user, is_completed=True, is_deleted=False)
     elif status_param == 'pending':
-        todos = Todo.objects.filter(user=request.user, is_completed=False)
+        todos = Todo.objects.filter(user=request.user, is_completed=False, is_deleted=False)
     else:  # 'all' or missing
-        todos = Todo.objects.filter(user=request.user)
+        todos = Todo.objects.filter(user=request.user, is_deleted=False)
 
     serializer = TodoSerializer(todos, many=True)
     return Response(serializer.data)
@@ -86,7 +88,7 @@ def list_todos_by_date(request):
     date = request.GET.get('date')
     if not date:
         return Response({'error': 'Date parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
-    todos = Todo.objects.filter(user=request.user, date=date)
+    todos = Todo.objects.filter(user=request.user, date=date, is_deleted = False)
     serializer = TodoSerializer(todos, many=True)
     return Response(serializer.data)
 
@@ -99,7 +101,6 @@ def update_todo(request, pk):
     except Todo.DoesNotExist:
         return Response({'error': 'Todo not found'}, status=status.HTTP_404_NOT_FOUND)
     
-    # Save old values for comparison
     old_task = todo.task
     old_is_completed = todo.is_completed
 
@@ -107,7 +108,6 @@ def update_todo(request, pk):
     if form.is_valid():
         form.save()
 
-        # Now compare and track edits
         new_task = request.data.get('task', old_task)
         new_is_completed = request.data.get('is_completed', old_is_completed)
 
@@ -115,9 +115,17 @@ def update_todo(request, pk):
         if old_task != new_task:
             todo.last_edited_field = 'task'
             todo.last_edit_detail = f"task changed from '{old_task}' to '{new_task}'"
+            # Log edited action
+            UserActionLog.objects.create(user=request.user, action='edited', todo=todo)
+
         elif str(old_is_completed).lower() != str(new_is_completed).lower():
             todo.last_edited_field = 'is_completed'
             todo.last_edit_detail = f"is_completed changed from '{old_is_completed}' to '{new_is_completed}'"
+            # Log edited action
+            UserActionLog.objects.create(user=request.user, action='edited', todo=todo)
+            # Log completed action if marked True
+            if str(new_is_completed).lower() == 'true':
+                UserActionLog.objects.create(user=request.user, action='completed', todo=todo)
         else:
             todo.last_edited_field = 'nothing'
             todo.last_edit_detail = 'No actual change in values'
@@ -135,11 +143,21 @@ def update_todo(request, pk):
 @permission_classes([IsAuthenticated])
 def delete_todo(request, pk):
     try:
-        todo = Todo.objects.get(pk=pk, user=request.user)
+        todo = Todo.objects.get(pk=pk, user=request.user, is_deleted=False)
     except Todo.DoesNotExist:
         return Response({'error': 'Todo not found'}, status=status.HTTP_404_NOT_FOUND)
     
-    todo.delete()
+    # Soft delete
+    todo.is_deleted = True
+    todo.save()
+
+    # Log the deletion
+    UserActionLog.objects.create(
+        user=request.user,
+        action='deleted',
+        todo=todo
+    )
+
     return Response({'message': 'Todo deleted successfully'}, status=status.HTTP_200_OK)
 
 # Logout for User and Admin
@@ -152,7 +170,7 @@ def logout(request):
         return Response({'error': 'Something went wrong'}, status=HTTP_400_BAD_REQUEST)
     return Response({"message": "Successfully logged out"}, status=HTTP_200_OK)
 
-# Admin login API
+# Admin - login API
 @csrf_exempt
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -171,6 +189,7 @@ def admin_login(request):
         return Response({'token': token.key, 'message': 'Admin logged in'}, status=HTTP_200_OK)
     return Response({'error': 'Invalid admin credentials'}, status=HTTP_404_NOT_FOUND)
 
+# Admin - User Report
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def admin_user_report(request):
@@ -181,14 +200,6 @@ def admin_user_report(request):
     users = User.objects.filter(is_superuser = False)
     serializer = UserReportSerializer(users, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-
-
-
-
-
-
 
 
 
