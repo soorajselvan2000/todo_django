@@ -201,6 +201,39 @@ def admin_user_report(request):
     serializer = UserReportSerializer(users, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
 
+# Admin - User Usage Statistics Report
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_user_usage_stats(request):
+    if not request.user.is_superuser:
+        return Response({'error': 'Unauthorized. Only admin can access this.'}, status=403)
+
+    from django.contrib.auth.models import User
+    from .models import UserActionLog
+
+    users = User.objects.filter(is_superuser=False)
+    data = []
+
+    for user in users:
+        user_logs = UserActionLog.objects.filter(user=user)
+        data.append({
+            "username": user.username,
+            "added_tasks": user_logs.filter(action='added').count(),
+            "deleted_tasks": user_logs.filter(action='deleted').count(),
+            "completed_tasks": user_logs.filter(action='completed').count(),
+            "edited_tasks": user_logs.filter(action='edited').count(),
+            "imported_tasks": user_logs.filter(action='imported').count(),
+            "exported_tasks": user_logs.filter(action='exported').count(),
+        })
+
+    return Response(data, status=200)
+
+
+
+
+
+
+
 
 
 
