@@ -17,7 +17,14 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from .serializers import TodoSerializer
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Todo
+from .forms import TodoForm
 
+# Normal user Signup API
 @api_view(['POST'])
 @permission_classes((AllowAny,))
 def signup(request):
@@ -26,6 +33,124 @@ def signup(request):
         user = form.save()
         return Response("account created successfully", status=status.HTTP_201_CREATED)
     return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Normal user login API
+@csrf_exempt
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def user_login(request):
+    username = request.data.get("username")
+    password = request.data.get("password")
+    if not username or not password:
+        return Response({'error': 'Username and password required'}, status=HTTP_400_BAD_REQUEST)
+
+    user = authenticate(username=username, password=password)
+
+    if user and not user.is_superuser:
+        login(request, user)
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({'token': token.key, 'message': 'User logged in'}, status=HTTP_200_OK)
+
+    return Response({'error': 'Invalid user credentials'}, status=HTTP_404_NOT_FOUND)
+
+# Create todo
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_todo(request):
+    serializer = TodoSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(user=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Filter todos by status[completed or pending]
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def filter_todos_by_status(request):
+    status_param = request.GET.get('status')
+
+    if status_param == 'completed':
+        todos = Todo.objects.filter(user=request.user, is_completed=True)
+    elif status_param == 'pending':
+        todos = Todo.objects.filter(user=request.user, is_completed=False)
+    else:  # 'all' or missing
+        todos = Todo.objects.filter(user=request.user)
+
+    serializer = TodoSerializer(todos, many=True)
+    return Response(serializer.data)
+
+# Search todo by Date
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_todos_by_date(request):
+    date = request.GET.get('date')
+    if not date:
+        return Response({'error': 'Date parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+    todos = Todo.objects.filter(user=request.user, date=date)
+    serializer = TodoSerializer(todos, many=True)
+    return Response(serializer.data)
+
+# Update todo
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_todo(request, pk):
+    try:
+        todo = Todo.objects.get(pk=pk, user=request.user)
+    except Todo.DoesNotExist:
+        return Response({'error': 'Todo not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Save old values for comparison
+    old_task = todo.task
+    old_is_completed = todo.is_completed
+
+    form = TodoForm(request.data, instance=todo)
+    if form.is_valid():
+        form.save()
+
+        # Now compare and track edits
+        new_task = request.data.get('task', old_task)
+        new_is_completed = request.data.get('is_completed', old_is_completed)
+
+        # Track what was changed
+        if old_task != new_task:
+            todo.last_edited_field = 'task'
+            todo.last_edit_detail = f"task changed from '{old_task}' to '{new_task}'"
+        elif str(old_is_completed).lower() != str(new_is_completed).lower():
+            todo.last_edited_field = 'is_completed'
+            todo.last_edit_detail = f"is_completed changed from '{old_is_completed}' to '{new_is_completed}'"
+        else:
+            todo.last_edited_field = 'nothing'
+            todo.last_edit_detail = 'No actual change in values'
+
+        todo.edit_count += 1
+        todo.last_edited_by = request.user
+        todo.save()
+
+        return Response({'message': 'Todo updated successfully'}, status=status.HTTP_200_OK)
+    
+    return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Delete todo
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_todo(request, pk):
+    try:
+        todo = Todo.objects.get(pk=pk, user=request.user)
+    except Todo.DoesNotExist:
+        return Response({'error': 'Todo not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    todo.delete()
+    return Response({'message': 'Todo deleted successfully'}, status=status.HTTP_200_OK)
+
+# Logout for User and Admin
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def logout(request):
+    try:
+        request.user.auth_token.delete()
+    except:
+        return Response({'error': 'Something went wrong'}, status=HTTP_400_BAD_REQUEST)
+    return Response({"message": "Successfully logged out"}, status=HTTP_200_OK)
 
 # Admin login API
 @csrf_exempt
@@ -47,93 +172,17 @@ def admin_login(request):
     return Response({'error': 'Invalid admin credentials'}, status=HTTP_404_NOT_FOUND)
 
 
-# Normal user login API
-@csrf_exempt
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def user_login(request):
-    username = request.data.get("username")
-    password = request.data.get("password")
-
-    if not username or not password:
-        return Response({'error': 'Username and password required'}, status=HTTP_400_BAD_REQUEST)
-
-    user = authenticate(username=username, password=password)
-
-    if user and not user.is_superuser:
-        login(request, user)
-        token, _ = Token.objects.get_or_create(user=user)
-        return Response({'token': token.key, 'message': 'User logged in'}, status=HTTP_200_OK)
-
-    return Response({'error': 'Invalid user credentials'}, status=HTTP_404_NOT_FOUND)
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def logout(request):
-    try:
-        request.user.auth_token.delete()
-    except:
-        return Response({'error': 'Something went wrong'}, status=HTTP_400_BAD_REQUEST)
-    return Response({"message": "Successfully logged out"}, status=HTTP_200_OK)
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def create_todo(request):
-    serializer = TodoSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(user=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def list_todos_by_date(request):
-    date = request.GET.get('date')
-    if not date:
-        return Response({'error': 'Date parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
-    todos = Todo.objects.filter(user=request.user, date=date)
+def admin_todo_list(request):
+    if not request.user.is_superuser:
+        return Response({'error': 'Unauthorized Admin is not logged in'}, status=status.HTTP_403_FORBIDDEN)
+    # Fetch all todos for admin
+    todos = Todo.objects.all()
     serializer = TodoSerializer(todos, many=True)
     return Response(serializer.data)
 
-@api_view(['PUT'])
-@permission_classes([IsAuthenticated])
-def update_todo(request, pk):
-    try:
-        todo = Todo.objects.get(pk=pk, user=request.user)
-    except Todo.DoesNotExist:
-        return Response({'error': 'Todo not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    form = TodoForm(request.data, instance=todo)
-    if form.is_valid():
-        form.save()
-        return Response({'message': 'Todo updated successfully'}, status=status.HTTP_200_OK)
-    return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def delete_todo(request, pk):
-    try:
-        todo = Todo.objects.get(pk=pk, user=request.user)
-    except Todo.DoesNotExist:
-        return Response({'error': 'Todo not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    todo.delete()
-    return Response({'message': 'Todo deleted successfully'}, status=status.HTTP_200_OK)
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def filter_todos_by_status(request):
-    status_param = request.GET.get('status')
-
-    if status_param == 'completed':
-        todos = Todo.objects.filter(user=request.user, is_completed=True)
-    elif status_param == 'pending':
-        todos = Todo.objects.filter(user=request.user, is_completed=False)
-    else:  # 'all' or missing
-        todos = Todo.objects.filter(user=request.user)
-
-    serializer = TodoSerializer(todos, many=True)
-    return Response(serializer.data)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -170,4 +219,3 @@ def import_todos(request):
         return Response({'error': 'Unsupported file format'}, status=400)
 
     return Response({'message': 'Todos imported successfully'})
-
