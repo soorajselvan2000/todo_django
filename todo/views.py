@@ -54,16 +54,34 @@ def user_login(request):
     return Response({'error': 'Invalid user credentials'}, status=HTTP_404_NOT_FOUND)
 
 # Create todo
+from django.utils.timezone import now
 from .models import UserActionLog
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_todo(request):
+    today = now().date()
+
+    # ✅ Count only today's non-deleted todos
+    created_today_count = Todo.objects.filter(
+        user=request.user,
+        date=today,
+        is_deleted=False
+    ).count()
+
+    if created_today_count >= 12:
+        return Response(
+            {"error": "Daily limit of 12 tasks reached."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     serializer = TodoSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save(user=request.user)
         UserActionLog.objects.create(user=request.user, action='added', todo=serializer.instance)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 # Filter todos by status[completed or pending]
 @api_view(['GET'])
