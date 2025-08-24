@@ -10,7 +10,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from .forms import TodoForm
-from .serializers import TodoSerializer
+from .serializers import TodoSerializer,UserReportSerializer
 from .models import Todo
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -171,16 +171,30 @@ def admin_login(request):
         return Response({'token': token.key, 'message': 'Admin logged in'}, status=HTTP_200_OK)
     return Response({'error': 'Invalid admin credentials'}, status=HTTP_404_NOT_FOUND)
 
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def admin_todo_list(request):
+def admin_user_report(request):
     if not request.user.is_superuser:
-        return Response({'error': 'Unauthorized Admin is not logged in'}, status=status.HTTP_403_FORBIDDEN)
-    # Fetch all todos for admin
-    todos = Todo.objects.all()
-    serializer = TodoSerializer(todos, many=True)
-    return Response(serializer.data)
+        return Response({'error': 'Unauthorized. Only admin can access this.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from django.contrib.auth.models import User
+    users = User.objects.filter(is_superuser = False)
+    serializer = UserReportSerializer(users, many=True, context={'request': request})
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
