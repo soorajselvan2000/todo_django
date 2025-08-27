@@ -40,7 +40,9 @@ INSTALLED_APPS = [
     'todo',
     'rest_framework',
     'rest_framework.authtoken',
-    'corsheaders'
+    'corsheaders',
+    'django_crontab',
+    "django_apscheduler",
 ]
 
 MIDDLEWARE = [
@@ -53,6 +55,11 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     
+]
+
+CRONJOBS = [
+    # Runs every day at 9 AM
+    ('0 9 * * *', 'todo.cron.notify_due_todos'),
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -85,7 +92,7 @@ WSGI_APPLICATION = 'todo_project.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'my_todo',
+        'NAME': 'todo',
         'USER': 'root',
         'PASSWORD': '',
         'HOST': 'localhost',
@@ -142,3 +149,14 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'sandbox.smtp.mailtrap.io'
+EMAIL_HOST_USER = '731368afab7188'
+EMAIL_HOST_PASSWORD = '4eaa882abe51b6'
+EMAIL_PORT = '2525'
+EMAIL_USE_TLS = True
+DEFAULT_FROM_EMAIL = 'noreply@todoapp.com'
+
+
+

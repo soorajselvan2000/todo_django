@@ -6,7 +6,9 @@ class Todo(models.Model):
     date = models.DateField()
     task = models.CharField(max_length=255)
     is_completed = models.BooleanField(default=False)
-    is_deleted = models.BooleanField(default=False) 
+    is_deleted = models.BooleanField(default=False)
+    is_imported = models.BooleanField(default=False)
+    
 
     def __str__(self):
         return f"{self.date} - {self.task}"

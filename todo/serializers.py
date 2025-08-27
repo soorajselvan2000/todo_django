@@ -6,7 +6,7 @@ class TodoSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     class Meta:
         model = Todo
-        fields = ['id', 'task', 'date', 'is_completed', 'username']
+        fields = ['id', 'task', 'date', 'is_completed', 'is_imported', 'username']
         read_only_fields = ['user']
 
 class UserReportSerializer(serializers.ModelSerializer):

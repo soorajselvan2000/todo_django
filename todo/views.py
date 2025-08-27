@@ -178,6 +178,41 @@ def delete_todo(request, pk):
 
     return Response({'message': 'Todo deleted successfully'}, status=status.HTTP_200_OK)
 
+# importing todo as CSV file
+import csv
+import io
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_todos(request):
+    file = request.FILES.get("file")
+    if not file:
+        return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not file.name.endswith(".csv"):
+        return Response({"error": "File must be CSV"}, status=status.HTTP_400_BAD_REQUEST)
+
+    decoded_file = file.read().decode("utf-8")
+    io_string = io.StringIO(decoded_file)
+    reader = csv.DictReader(io_string)
+
+    created_count = 0
+    for row in reader:
+        task = row.get("task")
+        date = row.get("date")
+        if task and date:
+            Todo.objects.create(
+                user=request.user,
+                task=task,
+                date=date,
+                is_completed=False,
+                is_imported=True
+            )
+            created_count += 1
+
+    return Response({"message": f"{created_count} todos imported successfully."}, status=200)
+
+
 # Logout for User and Admin
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -187,6 +222,14 @@ def logout(request):
     except:
         return Response({'error': 'Something went wrong'}, status=HTTP_400_BAD_REQUEST)
     return Response({"message": "Successfully logged out"}, status=HTTP_200_OK)
+
+# Task scheduler
+from django.http import JsonResponse
+from django_apscheduler.models import DjangoJob
+
+def list_jobs(request):
+    jobs = DjangoJob.objects.all().values("id", "next_run_time")
+    return JsonResponse(list(jobs), safe=False)
 
 # Admin - login API
 @csrf_exempt
@@ -250,48 +293,11 @@ def admin_user_usage_stats(request):
 
 
 
+# Testing:
+# todo/views.py
+from django.http import JsonResponse
+from .Jobs import send_task_reminders
 
-
-
-
-
-
-
-
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def import_todos(request):
-    file = request.FILES.get('file')
-    if not file:
-        return Response({'error': 'No file provided'}, status=400)
-
-    ext = file.name.split('.')[-1].lower()
-
-    if ext == 'json':
-        import json
-        data = json.load(file)
-        for item in data:
-            Todo.objects.create(user=request.user, **item)
-
-    elif ext == 'csv':
-        import csv
-        decoded = file.read().decode('utf-8').splitlines()
-        reader = csv.DictReader(decoded)
-        for row in reader:
-            Todo.objects.create(user=request.user, **row)
-
-    elif ext == 'txt':
-        lines = file.read().decode('utf-8').splitlines()
-        for line in lines:
-            Todo.objects.create(user=request.user, task=line, date=date.today())
-
-    elif ext == 'sql':
-        # WARNING: Not safe to run SQL queries directly unless parsed
-        return Response({'error': 'SQL import not supported for safety'}, status=400)
-
-    else:
-        return Response({'error': 'Unsupported file format'}, status=400)
-
-    return Response({'message': 'Todos imported successfully'})
+def run_reminder_now(request):
+    send_task_reminders()
+    return JsonResponse({"status": "Job executed manually!"})
