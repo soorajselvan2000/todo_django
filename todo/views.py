@@ -25,13 +25,25 @@ from .models import Todo
 from .forms import TodoForm
 
 # Normal user Signup API
+# views.py
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+
 @api_view(['POST'])
 @permission_classes((AllowAny,))
 def signup(request):
     form = UserCreationForm(data=request.data)
     if form.is_valid():
-        user = form.save()
-        return Response("account created successfully", status=status.HTTP_201_CREATED)
+        user = form.save(commit=False)
+        email = request.data.get("email")
+        if email:
+            user.email = email
+        user.save()
+        return Response({"message": "Account created successfully"}, status=status.HTTP_201_CREATED)
     return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # Normal user login API
