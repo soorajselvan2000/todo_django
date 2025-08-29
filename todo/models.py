@@ -8,7 +8,6 @@ class Todo(models.Model):
     is_completed = models.BooleanField(default=False)
     is_deleted = models.BooleanField(default=False)
     is_imported = models.BooleanField(default=False)
-    
 
     def __str__(self):
         return f"{self.date} - {self.task}"
@@ -36,3 +35,19 @@ class UserActionLog(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.action} - {self.timestamp}"
+    
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    is_premium = models.BooleanField(default=False)  # ✅ premium flag
+
+    def __str__(self):
+        return f"{self.user.username} - {'Premium' if self.is_premium else 'Free'}"
+
+
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        UserProfile.objects.create(user=instance)

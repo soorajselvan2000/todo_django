@@ -65,6 +65,9 @@ CRONJOBS = [
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = True
 
+# Allow these headers for file downloads
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
+
 ROOT_URLCONF = 'todo_project.urls'
 
 TEMPLATES = [
@@ -150,13 +153,13 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'sandbox.smtp.mailtrap.io'
 EMAIL_HOST_USER = '731368afab7188'
 EMAIL_HOST_PASSWORD = '4eaa882abe51b6'
 EMAIL_PORT = '2525'
 EMAIL_USE_TLS = True
-DEFAULT_FROM_EMAIL = 'noreply@todoapp.com'
-
+DEFAULT_FROM_EMAIL = 'todo-app@example.com'
 
 

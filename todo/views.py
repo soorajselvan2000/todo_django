@@ -65,24 +65,68 @@ def user_login(request):
 
     return Response({'error': 'Invalid user credentials'}, status=HTTP_404_NOT_FOUND)
 
+from rest_framework import status
+from .models import UserProfile
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upgrade_to_premium(request):
+    """Upgrade the logged-in user to premium"""
+    try:
+        profile = UserProfile.objects.get(user=request.user)
+        profile.is_premium = True
+        profile.save()
+        return Response({"message": "You are now a premium user!"}, status=status.HTTP_200_OK)
+    except UserProfile.DoesNotExist:
+        return Response({"error": "Profile not found"}, status=status.HTTP_404_NOT_FOUND)
+
 # Create todo
 from django.utils.timezone import now
 from .models import UserActionLog
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated])
+# def create_todo(request):
+#     today = now().date()
+
+#     # ✅ Count only today's non-deleted todos
+#     created_today_count = Todo.objects.filter(
+#         user=request.user,
+#         date=today,
+#         is_deleted=False
+#     ).count()
+
+#     if created_today_count >= 2:
+#         return Response(
+#             {"error": "Daily limit of 2 tasks reached."},
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+
+#     serializer = TodoSerializer(data=request.data)
+#     if serializer.is_valid():
+#         serializer.save(user=request.user)
+#         UserActionLog.objects.create(user=request.user, action='added', todo=serializer.instance)
+#         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+#     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_todo(request):
     today = now().date()
 
-    # ✅ Count only today's non-deleted todos
+    # ✅ Check premium status
+    is_premium = hasattr(request.user, "userprofile") and request.user.userprofile.is_premium
+    daily_limit = 1000 if is_premium else 12
+
     created_today_count = Todo.objects.filter(
         user=request.user,
         date=today,
         is_deleted=False
     ).count()
 
-    if created_today_count >= 12:
+    if created_today_count >= daily_limit:
         return Response(
-            {"error": "Daily limit of 12 tasks reached."},
+            {"error": f"Daily limit of {daily_limit} tasks reached."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
@@ -200,7 +244,6 @@ def import_todos(request):
     file = request.FILES.get("file")
     if not file:
         return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
-
     if not file.name.endswith(".csv"):
         return Response({"error": "File must be CSV"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -210,20 +253,175 @@ def import_todos(request):
 
     created_count = 0
     for row in reader:
-        task = row.get("task")
-        date = row.get("date")
+        task, date = row.get("task"), row.get("date")
         if task and date:
-            Todo.objects.create(
-                user=request.user,
-                task=task,
-                date=date,
-                is_completed=False,
-                is_imported=True
-            )
+            todo = Todo.objects.create(user=request.user, task=task, date=date, is_completed=False, is_imported=True)
+            print("IMPORT LOGGING:", task, date)
+            UserActionLog.objects.create(user=request.user, action='imported', todo=todo)
+
             created_count += 1
 
     return Response({"message": f"{created_count} todos imported successfully."}, status=200)
 
+from django.http import HttpResponse, JsonResponse
+from io import StringIO
+from django.utils import timezone
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_todos(request):
+    """
+    Export todos in various formats - matches frontend API structure
+    Expected URL: /api/todos/export/?format=csv (or json, txt, mysql)
+    """
+    format_type = request.GET.get('format', 'json').lower()
+    
+    # Get user's todos
+    todos = Todo.objects.filter(user=request.user, is_deleted=False)
+    
+    if not todos.exists():
+        return JsonResponse({"error": "No todos to export"}, status=404)
+    
+    # Prepare data in the exact format expected by frontend
+    data = []
+    for todo in todos:
+        data.append({
+            "id": todo.id,
+            "task": todo.task,
+            "date": str(todo.date),
+            "is_completed": todo.is_completed,
+            "is_imported": todo.is_imported,
+            "username": todo.user.username,
+            # Add any other fields your frontend expects
+        })
+    
+    # Log the export action for each todo
+    for todo in todos:
+        UserActionLog.objects.create(
+            user=request.user,
+            action="exported",
+            todo=todo
+        )
+    
+    # Handle different export formats
+    if format_type == 'csv':
+        return export_csv(data)
+    elif format_type == 'json':
+        return export_json(data)
+    elif format_type == 'txt':
+        return export_txt(data)
+    elif format_type == 'mysql':
+        return export_mysql(data, request.user)
+    else:
+        return JsonResponse({"error": "Invalid format. Use: csv, json, txt, mysql"}, status=400)
+
+
+def export_csv(data):
+    """Export data as CSV"""
+    if not data:
+        return JsonResponse({"error": "No data to export"}, status=404)
+    
+    # Create CSV content
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=data[0].keys())
+    writer.writeheader()
+    writer.writerows(data)
+    
+    response = HttpResponse(output.getvalue(), content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="todos.csv"'
+    response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+    
+    return response
+
+
+def export_json(data):
+    """Export data as JSON"""
+    return JsonResponse(data, safe=False, json_dumps_params={'indent': 2})
+
+
+def export_txt(data):
+    """Export data as TXT"""
+    if not data:
+        return JsonResponse({"error": "No data to export"}, status=404)
+    
+    content = ""
+    for item in data:
+        content += f"ID: {item['id']}\n"
+        content += f"Task: {item['task']}\n"
+        content += f"Date: {item['date']}\n"
+        content += f"Completed: {item['is_completed']}\n"
+        content += f"Username: {item['username']}\n"
+        content += "-" * 40 + "\n\n"
+    
+    response = HttpResponse(content, content_type='text/plain; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="todos.txt"'
+    response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+    
+    return response
+
+
+def export_mysql(data, user):
+    """Export data as MySQL insert statements"""
+    if not data:
+        return JsonResponse({"error": "No data to export"}, status=404)
+    
+    content = "-- MySQL export generated on " + str(timezone.now()) + "\n\n"
+    content += "-- Exported by: " + user.username + "\n\n"
+    
+    for item in data:
+        # Escape single quotes in task
+        task_escaped = item['task'].replace("'", "''") if item['task'] else ''
+        
+        sql = (
+            f"INSERT INTO todos (id, task, date, is_completed, username) VALUES ("
+            f"{item['id']}, "
+            f"'{task_escaped}', "
+            f"'{item['date']}', "
+            f"{1 if item['is_completed'] else 0}, "
+            f"'{item['username']}'"
+            f");\n"
+        )
+        content += sql
+    
+    response = HttpResponse(content, content_type='text/plain; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="todos.sql"'
+    response['Access-Control-Expose-Headers'] = 'Content-Disposition'
+    
+    return response
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def export_todos_log(request):
+    """
+    Log export action - matches frontend API structure
+    Expected URL: /api/todos/export/log/ (POST)
+    """
+    try:
+        # Log a general export action (without specific todo)
+        UserActionLog.objects.create(
+            user=request.user,
+            action="exported"
+        )
+        
+        return JsonResponse({
+            "message": "Export action logged successfully",
+            "status": "success"
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            "error": f"Failed to log export action: {str(e)}",
+            "status": "error"
+        }, status=500)
+
+
+# ================= RECORD EXPORTED ACTION =================
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def record_exported_action(request):
+    UserActionLog.objects.create(user=request.user, action="exported")
+    return HttpResponse("Export action recorded ✅")
 
 # Logout for User and Admin
 @api_view(["POST"])
@@ -263,14 +461,24 @@ def admin_login(request):
     return Response({'error': 'Invalid admin credentials'}, status=HTTP_404_NOT_FOUND)
 
 # Admin - User Report
+from django.db.models import Count, Q
+from rest_framework import status
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def admin_user_report(request):
     if not request.user.is_superuser:
         return Response({'error': 'Unauthorized. Only admin can access this.'}, status=status.HTTP_403_FORBIDDEN)
 
-    from django.contrib.auth.models import User
-    users = User.objects.filter(is_superuser = False)
+    date = request.GET.get('date')
+
+    # ✅ Annotate with counts
+    users = User.objects.filter(is_superuser=False).annotate(
+        total_tasks=Count('todo', filter=Q(todo__is_deleted=False) & (Q(todo__date=date) if date else Q())),
+        completed_tasks=Count('todo', filter=Q(todo__is_deleted=False, todo__is_completed=True) & (Q(todo__date=date) if date else Q())),
+        pending_tasks=Count('todo', filter=Q(todo__is_deleted=False, todo__is_completed=False) & (Q(todo__date=date) if date else Q()))
+    ).order_by('-total_tasks')  # ✅ Sort users by most → least tasks
+
     serializer = UserReportSerializer(users, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
 
