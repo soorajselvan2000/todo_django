@@ -13,6 +13,7 @@ urlpatterns = [
     path('todos/status/', views.filter_todos_by_status, name='filter_todos'),
     path('todos/<int:pk>/update/', views.update_todo, name='update_todo'),
     path('todos/<int:pk>/delete/', views.delete_todo, name='delete_todo'),
+    path('todos/expire/', views.send_expired_todos_email, name='expire_todos'),
     path("todos/import/", views.import_todos, name="import-todos"),
     path('todos/export/', views.export_todos, name='export_todos'),
     path('todos/export/log/', views.export_todos_log, name='export_todos_log'),

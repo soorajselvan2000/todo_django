@@ -150,6 +150,47 @@ def list_todos_by_date(request):
     serializer = TodoSerializer(todos, many=True)
     return Response(serializer.data)
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.core.mail import send_mail
+from django.conf import settings
+from django.utils import timezone
+from .models import Todo
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def send_expired_todos_email(request):
+    user = request.user
+
+    if not user.email:
+        return Response({'error': 'User does not have an email address'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Get all expired todos for this user (past due date and not deleted)
+    expired_todos = Todo.objects.filter(user=user, date__lt=timezone.now(), is_deleted=False)
+
+    if not expired_todos.exists():
+        return Response({'message': 'No expired todos to send'}, status=status.HTTP_200_OK)
+
+    # Prepare email content
+    subject = 'Your Expired Todos'
+    message_lines = ['The following todos have expired:\n']
+    for todo in expired_todos:
+        message_lines.append(f"- {todo.task} (Due: {todo.date.strftime('%Y-%m-%d %H:%M')})")
+
+    conclusion = "\n\nPlease take necessary action on these tasks.\n\nBest regards,\nTodo App Team"
+    message = f'Dear {user}\n\n'  + "\n".join(message_lines) + conclusion
+    from_email = settings.DEFAULT_FROM_EMAIL
+    recipient_list = [user.email]
+
+    try:
+        send_mail(subject, message, from_email, recipient_list)
+        return Response({'message': 'Expired todos sent via email successfully'}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({'error': f'Failed to send email: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # Update todo
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
