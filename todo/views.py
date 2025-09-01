@@ -1,5 +1,4 @@
 from django.contrib.auth import authenticate,login
-from rest_framework import status
 from rest_framework.decorators import api_view,permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.views.decorators.csrf import csrf_exempt
@@ -7,32 +6,17 @@ from rest_framework.response import Response
 from django.contrib.auth.forms import UserCreationForm
 from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 from rest_framework.authtoken.models import Token
-from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from .forms import TodoForm
 from .serializers import TodoSerializer,UserReportSerializer
 from .models import Todo
-from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 from .serializers import TodoSerializer
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Todo
-from .forms import TodoForm
-
-# Normal user Signup API
-# views.py
-from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-from rest_framework import status
 
+# Signup
 @api_view(['POST'])
 @permission_classes((AllowAny,))
 def signup(request):
@@ -416,13 +400,6 @@ def export_todos_log(request):
         }, status=500)
 
 
-# ================= RECORD EXPORTED ACTION =================
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def record_exported_action(request):
-    UserActionLog.objects.create(user=request.user, action="exported")
-    return HttpResponse("Export action recorded ✅")
-
 # Logout for User and Admin
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -508,9 +485,6 @@ def admin_user_usage_stats(request):
         })
 
     return Response(data, status=200)
-
-
-
 
 
 # Testing:

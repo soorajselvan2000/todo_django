@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
+from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -154,12 +155,9 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'sandbox.smtp.mailtrap.io'
-EMAIL_HOST_USER = '731368afab7188'
-EMAIL_HOST_PASSWORD = '4eaa882abe51b6'
-EMAIL_PORT = '2525'
-EMAIL_USE_TLS = True
-DEFAULT_FROM_EMAIL = 'todo-app@example.com'
-
+# Looking to send emails in production? Check out our Email API/SMTP product!
+EMAIL_HOST = config('hosting_email')
+EMAIL_HOST_USER = config('host_email')
+EMAIL_HOST_PASSWORD = config("host_password")
+EMAIL_PORT = config("email_port")
 
